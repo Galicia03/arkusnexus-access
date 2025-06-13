@@ -1,15 +1,16 @@
 "use client"
 
-import type React from "react"
-
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { User, ArrowLeft, Eye, EyeOff, LogIn } from "lucide-react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { signInWithEmailAndPassword } from "firebase/auth"
+import { doc, getDoc } from "firebase/firestore"
+import { auth, db } from "@/lib/firebase"
 
 export default function LoginColaborador() {
   const [email, setEmail] = useState("")
@@ -22,27 +23,36 @@ export default function LoginColaborador() {
     e.preventDefault()
     setCargando(true)
 
-    // Simular autenticación
-    setTimeout(() => {
-      const usuariosValidos = [
-        { email: "ana.garcia@empresa.com", password: "user123", id: "1", nombre: "Ana García Martínez" },
-        { email: "carlos.lopez@empresa.com", password: "user123", id: "2", nombre: "Carlos López Ruiz" },
-        { email: "maria.rodriguez@empresa.com", password: "user123", id: "3", nombre: "María Rodríguez Silva" },
-        { email: "jose.fernandez@empresa.com", password: "user123", id: "4", nombre: "José Fernández Torres" },
-      ]
+    try {
+      const userCred = await signInWithEmailAndPassword(auth, email, password)
+      const uid = userCred.user.uid
 
-      const usuario = usuariosValidos.find((u) => u.email === email && u.password === password)
+      const userDocRef = doc(db, "users", uid)
+      const userSnap = await getDoc(userDocRef)
 
-      if (usuario) {
-        localStorage.setItem("colaboradorToken", `user-jwt-token-${usuario.id}`)
-        localStorage.setItem("usuarioId", usuario.id)
-        localStorage.setItem("nombreUsuario", usuario.nombre)
-        router.push("/colaborador/dashboard")
-      } else {
-        alert("Credenciales inválidas. Pruebe ana.garcia@empresa.com / user123")
+      if (!userSnap.exists()) {
+        alert("El usuario no tiene un perfil registrado en Firestore.")
+        return
       }
+
+      const userData = userSnap.data()
+
+      if (userData.rol !== "colaborador") {
+        alert("Este usuario no tiene permisos de colaborador.")
+        return
+      }
+
+      localStorage.setItem("colaboradorToken", uid)
+      localStorage.setItem("usuarioId", uid)
+      localStorage.setItem("nombreUsuario", userData.nombre || "Colaborador")
+
+      router.push("/colaborador/dashboard")
+    } catch (error: any) {
+      console.error("Error al iniciar sesión:", error)
+      alert("Credenciales inválidas o error de red.")
+    } finally {
       setCargando(false)
-    }, 1000)
+    }
   }
 
   return (
@@ -66,7 +76,7 @@ export default function LoginColaborador() {
             </div>
             <CardTitle className="text-3xl font-bold text-gray-900">Portal del Colaborador</CardTitle>
             <CardDescription className="text-gray-600 mt-2">
-              Acceda a su información personal y historial de accesos
+              Acceda a su información personal y registro facial
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -129,26 +139,8 @@ export default function LoginColaborador() {
               </Button>
             </form>
 
-            <div className="mt-8 p-4 bg-purple-50 rounded-lg border border-purple-200">
-              <p className="text-sm text-purple-800 font-medium mb-2">Credenciales de Demostración:</p>
-              <div className="space-y-1 text-sm text-purple-700">
-                <p>
-                  <strong>Ana García:</strong> ana.garcia@empresa.com / user123
-                </p>
-                <p>
-                  <strong>Carlos López:</strong> carlos.lopez@empresa.com / user123
-                </p>
-                <p>
-                  <strong>María Rodríguez:</strong> maria.rodriguez@empresa.com / user123
-                </p>
-                <p>
-                  <strong>José Fernández:</strong> jose.fernandez@empresa.com / user123
-                </p>
-              </div>
-            </div>
-
-            <div className="text-center">
-              <p className="text-xs text-gray-500">Acceso seguro con autenticación biométrica y cifrado de datos</p>
+            <div className="text-center mt-6 text-xs text-gray-500">
+              Autenticación real con Firebase y control de acceso por rol
             </div>
           </CardContent>
         </Card>

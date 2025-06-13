@@ -5,16 +5,14 @@ import { db } from '@/lib/firebase';
 import { collection, doc, setDoc } from 'firebase/firestore';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth } from '@/lib/firebase';
-import { v4 as uuidv4 } from 'uuid';
 
 const FaceRegistrationModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [images, setImages] = useState<string[]>([]);
   const [descriptors, setDescriptors] = useState<Float32Array[]>([]);
   const [user] = useAuthState(auth);
 
-  // Cargar modelos FaceAPI
+  // Cargar modelos de FaceAPI
   useEffect(() => {
     const loadModels = async () => {
       const MODEL_URL = '/models';
@@ -27,60 +25,45 @@ const FaceRegistrationModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: 
     loadModels();
   }, []);
 
-  // Iniciar cámara cuando el modal esté abierto
+  // Iniciar cámara al abrir el modal
   useEffect(() => {
-    if (isOpen && videoRef.current) {
-      navigator.mediaDevices
-        .getUserMedia({ video: true })
-        .then((stream) => {
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-          }
-        })
-        .catch((err) => console.error('Camera error:', err));
-    }
-  }, [isOpen]);
+    let stream: MediaStream;
 
-  // Dibujar detección en canvas en tiempo real
-  useEffect(() => {
-    let intervalId: NodeJS.Timeout;
-
-    const detectLive = async () => {
-      if (!videoRef.current || !canvasRef.current) return;
-
-      const canvas = canvasRef.current;
-      const video = videoRef.current;
-
-      faceapi.matchDimensions(canvas, {
-        width: video.videoWidth,
-        height: video.videoHeight,
-      });
-
-      const detections = await faceapi.detectAllFaces(
-        video,
-        new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.3 })
-      );
-
-      const resized = faceapi.resizeResults(detections, {
-        width: video.videoWidth,
-        height: video.videoHeight,
-      });
-
-      canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
-      faceapi.draw.drawDetections(canvas, resized);
+    const startCamera = async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.onloadedmetadata = () => {
+            videoRef.current?.play();
+          };
+        }
+      } catch (err) {
+        console.error("Camera error:", err);
+      }
     };
 
     if (isOpen) {
-      intervalId = setInterval(detectLive, 500); // Detectar cada 0.5s
+      startCamera();
     }
 
-    return () => clearInterval(intervalId);
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+    };
   }, [isOpen]);
 
-  // Capturar imagen y vector
+  // Capturar imagen del video
   const captureImage = async () => {
     if (!videoRef.current) return;
     const video = videoRef.current;
+
+    // Verificar que el video tenga dimensiones válidas
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      alert("Esperando que el video esté listo...");
+      return;
+    }
 
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth;
@@ -92,14 +75,9 @@ const FaceRegistrationModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: 
     const dataURL = canvas.toDataURL('image/jpeg');
 
     const detection = await faceapi
-      .detectSingleFace(
-        canvas,
-        new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.3 })
-      )
+      .detectSingleFace(canvas, new faceapi.TinyFaceDetectorOptions())
       .withFaceLandmarks()
       .withFaceDescriptor();
-
-    console.log("Detección:", detection);
 
     if (detection && detection.descriptor) {
       setImages((prev) => [...prev, dataURL]);
@@ -109,6 +87,7 @@ const FaceRegistrationModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: 
     }
   };
 
+  // Guardar descriptores en Firestore
   const handleSave = async () => {
     if (!user || descriptors.length < 3) return;
 
@@ -120,49 +99,63 @@ const FaceRegistrationModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: 
     });
 
     alert('Rostros registrados correctamente.');
+    stopCamera();
     onClose();
   };
 
+  // Detener cámara al cerrar modal
   const stopCamera = () => {
     if (videoRef.current?.srcObject) {
       (videoRef.current.srcObject as MediaStream).getTracks().forEach((track) => track.stop());
+      videoRef.current.srcObject = null;
     }
   };
 
+  // También detener cámara si se cierra el modal manualmente
+  useEffect(() => {
+    if (!isOpen) stopCamera();
+  }, [isOpen]);
+
   return isOpen ? (
     <div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center">
-      <div className="bg-white p-4 rounded-lg w-full max-w-md space-y-4 relative">
+      <div className="bg-white p-4 rounded-lg w-full max-w-md space-y-4">
         <h2 className="text-xl font-semibold">Registro Facial</h2>
-        <div className="relative">
-          <video
-            ref={videoRef}
-            autoPlay
-            muted
-            className="w-full h-auto rounded border"
-            width={480}
-            height={360}
-          />
-          <canvas
-            ref={canvasRef}
-            className="absolute top-0 left-0"
-            width={480}
-            height={360}
-          />
-        </div>
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          className="w-full h-auto rounded border"
+        />
         <button onClick={captureImage} className="bg-blue-500 text-white px-4 py-2 rounded">
           Capturar Rostro
         </button>
         <p>Imágenes capturadas: {images.length}/3</p>
         <div className="flex gap-2">
           {images.map((img, idx) => (
-            <img key={idx} src={img} alt={`captura-${idx}`} className="w-16 h-16 object-cover rounded border" />
+            <img
+              key={idx}
+              src={img}
+              alt={`captura-${idx}`}
+              className="w-16 h-16 object-cover rounded border"
+            />
           ))}
         </div>
         <div className="flex justify-between mt-4">
-          <button onClick={handleSave} disabled={images.length < 3} className="bg-green-600 text-white px-4 py-2 rounded">
+          <button
+            onClick={handleSave}
+            disabled={images.length < 3}
+            className="bg-green-600 text-white px-4 py-2 rounded disabled:opacity-50"
+          >
             Guardar
           </button>
-          <button onClick={() => { stopCamera(); onClose(); }} className="text-red-500">
+          <button
+            onClick={() => {
+              stopCamera();
+              onClose();
+            }}
+            className="text-red-500"
+          >
             Cancelar
           </button>
         </div>

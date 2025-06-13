@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Label } from "@/components/ui/label"
+import FaceRegistrationModal from "@/components/FaceRegistrationModal"
 import {
   User,
   Activity,
@@ -53,6 +54,7 @@ interface EstadisticasPersonales {
 }
 
 export default function DashboardColaborador() {
+  const [showFaceModal, setShowFaceModal] = useState(false);
   const router = useRouter()
   const [perfilUsuario, setPerfilUsuario] = useState<PerfilUsuario | null>(null)
   const [historialAccesos, setHistorialAccesos] = useState<RegistroAcceso[]>([])
@@ -628,10 +630,15 @@ export default function DashboardColaborador() {
                   <CardTitle>Solicitudes</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <Button className="w-full" variant="outline">
-                    <Camera className="h-4 w-4 mr-2" />
-                    Registrar Fotos para Reconocimiento
-                  </Button>
+                  <Button
+					  className="w-full"
+					  variant="outline"
+					  onClick={() => setShowFaceModal(true)}
+					>
+					  <Camera className="h-4 w-4 mr-2" />
+					  Registrar Fotos
+					</Button>
+
                   <Button className="w-full" variant="outline">
                     <User className="h-4 w-4 mr-2" />
                     Modificar Datos Personales
@@ -650,6 +657,7 @@ export default function DashboardColaborador() {
           </TabsContent>
         </Tabs>
       </div>
+    <FaceRegistrationModal isOpen={showFaceModal} onClose={() => setShowFaceModal(false)} />
     </div>
-  )
+  );
 }
